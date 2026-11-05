@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>클라이밍 레크레이션 점수판</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: one column like a gym scorecard. Participant view (#play) = my card + stone buttons; organizer view (#staff) = timer, stats, roster. */
+:root{
+  --bg:#ECEFF2; --surface:#FFFFFF; --ink:#15181D; --muted:#5E6672; --line:#D5DAE0;
+  --accent:#F2B705; --accent-ink:#1A1400; --good:#1E8E4A; --danger:#C62F3B; --track:#E2E6EA;
+  --display:"Black Han Sans","IBM Plex Sans KR",system-ui,sans-serif;
+  --body:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111418; --surface:#1A1E24; --ink:#EEF1F4; --muted:#9AA3AE; --line:#2C323A;
+  --accent:#F5C21B; --accent-ink:#1A1400; --good:#48C27A; --danger:#F06B74; --track:#262B32; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111418; --surface:#1A1E24; --ink:#EEF1F4; --muted:#9AA3AE; --line:#2C323A;
+  --accent:#F5C21B; --accent-ink:#1A1400; --good:#48C27A; --danger:#F06B74; --track:#262B32; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5}
+.wrap{max-width:680px;margin:0 auto;padding-block:20px 48px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+h1{font-family:var(--display);font-weight:400;font-size:clamp(24px,7vw,34px);line-height:1.1;margin:0;text-wrap:balance}
+h2{font-family:var(--display);font-weight:400;font-size:20px;margin:0}
+.sub{color:var(--muted);font-size:13px;margin-top:4px}
+.time{font-family:var(--mono);font-weight:600;font-size:22px;font-variant-numeric:tabular-nums;
+  background:var(--ink);color:var(--bg);padding:4px 12px;border-radius:8px;white-space:nowrap}
+.time[data-state="over"]{background:var(--danger);color:#fff}
+.time[data-state="before"]{background:var(--surface);color:var(--muted);border:1px solid var(--line)}
+nav.views{display:flex;gap:6px}
+nav.views a{font-size:13px;color:var(--muted);text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:4px 12px;background:var(--surface)}
+nav.views a[aria-current="page"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink);
+  border-radius:8px;padding:8px 12px;min-height:40px}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;font-weight:700}
+button.ghost{background:transparent}
+button.danger{color:var(--danger)}
+button:disabled{opacity:.45;cursor:not-allowed}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-height:44px;width:100%;min-width:0}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.note{font-size:13px;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:10px 12px}
+.note[data-kind="warn"]{color:var(--danger);border-color:var(--danger)}
+.rules{display:flex;flex-wrap:wrap;gap:6px;font-size:12px;color:var(--muted)}
+.rules span{border:1px solid var(--line);border-radius:999px;padding:2px 10px;background:var(--surface)}
+.chip{display:inline-flex;align-items:center;gap:6px}
+.dot{width:12px;height:12px;border-radius:50%;border:1px solid rgba(0,0,0,.25);flex:none}
+.stone{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;
+  border-radius:44% 56% 50% 50% / 52% 46% 54% 48%;border:1px solid rgba(0,0,0,.28);
+  box-shadow:inset -2px -2px 0 rgba(0,0,0,.18);font-size:10px;line-height:1;color:#fff;flex:none;text-shadow:0 0 2px #000}
+.stone.big{width:34px;height:34px;font-size:16px}
+.stack{display:flex;flex-wrap:wrap;gap:4px}
+
+/* my card */
+.me-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.me-name{font-family:var(--display);font-size:26px;line-height:1.1;overflow-wrap:anywhere}
+.me-score{text-align:right}
+.me-score .n{font-family:var(--mono);font-weight:600;font-size:44px;line-height:1;font-variant-numeric:tabular-nums}
+.me-score .r{font-size:13px;color:var(--muted);margin-top:4px}
+.pick{display:flex;flex-direction:column;gap:8px}
+.act{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:8px}
+.act .cnt{font-family:var(--mono);font-variant-numeric:tabular-nums;min-width:36px;text-align:center;font-weight:600}
+.act > button:last-child{min-width:48px;min-height:48px}
+.act.off{opacity:.45}
+.stonebtn{display:flex;align-items:center;gap:12px;text-align:left;min-height:64px;min-width:0;padding:8px 14px}
+.stonebtn .sb-txt{display:flex;flex-direction:column;min-width:0;line-height:1.25}
+.stonebtn b{font-size:17px}
+.stonebtn small{color:var(--muted);font-size:12px}
+@media (prefers-reduced-motion:no-preference){.stonebtn:not(:disabled):active{transform:scale(.98)}}
+form.reg{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+form.reg button{grid-column:1/-1;min-height:48px}
+
+/* board */
+.board{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.row{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.row.mine{border-color:var(--ink)}
+.row-head{width:100%;display:grid;grid-template-columns:36px 1fr auto;align-items:center;gap:12px;
+  border:0;border-radius:0;background:transparent;padding:10px 14px;text-align:left;min-height:58px}
+div.row-head{cursor:default}
+.rank{font-family:var(--display);font-size:20px;text-align:center;color:var(--muted)}
+.row[data-top="1"] .rank{color:var(--accent-ink);background:var(--accent);border-radius:8px}
+.row[data-top="2"] .rank,.row[data-top="3"] .rank{color:var(--ink)}
+.who{min-width:0}
+.name{font-weight:700;overflow-wrap:anywhere}
+.meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:12px;color:var(--muted)}
+.who .stack{margin-top:4px}
+.pts{font-family:var(--mono);font-weight:600;font-size:22px;font-variant-numeric:tabular-nums;text-align:right;line-height:1}
+.pts small{display:block;font-family:var(--body);font-size:11px;font-weight:500;color:var(--muted);margin-top:3px}
+.panel{border-top:1px solid var(--line);padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.panel-foot{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;padding-top:4px}
+.panel-foot select{width:auto;min-height:40px}
+.empty{background:var(--surface);border:1px dashed var(--line);border-radius:12px;padding:20px 16px;text-align:center;color:var(--muted)}
+details.all{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+details.all[open]{display:flex;flex-direction:column;gap:10px}
+summary{cursor:pointer;font-weight:700}
+
+/* staff */
+.timerbar{display:flex;flex-wrap:wrap;gap:8px}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+@media (max-width:520px){.tiles{grid-template-columns:repeat(2,1fr)}}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.tile .k{font-size:12px;color:var(--muted)}
+.tile .v{font-family:var(--mono);font-weight:600;font-size:26px;font-variant-numeric:tabular-nums;line-height:1.2}
+.bars{display:flex;flex-direction:column;gap:6px}
+.bar{display:grid;grid-template-columns:64px 1fr 36px;align-items:center;gap:8px;font-size:13px}
+.bar .tr{height:14px;background:var(--track);border-radius:7px;overflow:hidden}
+.bar .fl{height:100%;border-radius:7px;border:1px solid rgba(0,0,0,.2)}
+.bar .c{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+form.add{display:grid;grid-template-columns:1fr 130px auto;gap:8px}
+@media (max-width:460px){form.add{grid-template-columns:1fr 1fr}form.add button{grid-column:1/-1}}
+.settings{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ladder{display:flex;flex-wrap:wrap;gap:6px;font-size:12px}
+.ladder span{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:2px 8px}
+.ladder span.hi{border-color:var(--ink);font-weight:700}
+.linkbox{display:flex;gap:8px}
+.linkbox input{font-family:var(--mono);font-size:12px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));
+  background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:999px;font-size:13px;z-index:20;max-width:calc(100% - 32px)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>클라이밍 레크레이션</h1>
+      <div class="sub" id="subline">개인전 · 총점순 · 동점이면 완등 개수</div>
+    </div>
+    <span class="time" id="time" data-state="before">2:00:00</span>
+  </header>
+  <nav class="views" id="nav" hidden>
+    <a href="#play" id="navPlay">참가자 화면</a>
+    <a href="#staff" id="navStaff">운영 화면</a>
+  </nav>
+  <div class="rules" id="rulesLine"></div>
+  <div class="note" id="status" hidden></div>
+
+  <!-- ===== participant view ===== -->
+  <div id="viewPlay" hidden>
+    <div class="card" id="regCard" hidden>
+      <h2>참가 등록</h2>
+      <form class="reg" id="regForm">
+        <label class="f">이름<input id="regName" autocomplete="off" required maxlength="20"></label>
+        <label class="f">본인 레벨<select id="regLevel"></select></label>
+        <button class="primary" type="submit">참가하기</button>
+      </form>
+      <div class="sub">본인 레벨은 최근 한 달 동안 완등한 최고 색이에요. 등록 후에는 운영진만 바꿀 수 있어요. 같은 폰, 같은 브라우저로 다시 들어와야 내 기록이 이어져요.</div>
+    </div>
+    <div class="card" id="meCard" hidden></div>
+  </div>
+
+  <!-- ===== staff view ===== -->
+  <div id="viewStaff" hidden>
+    <div id="staffBody" style="display:flex;flex-direction:column;gap:18px">
+      <div class="card">
+        <h2>타이머</h2>
+        <div class="timerbar">
+          <button class="primary" id="startBtn" type="button">시작</button>
+          <button id="minusBtn" type="button">−5분</button>
+          <button id="plusBtn" type="button">+5분</button>
+          <button class="danger" id="endBtn" type="button">지금 종료</button>
+          <button class="ghost danger" id="resetBtn" type="button">초기화</button>
+        </div>
+        <div class="sub" id="timerNote"></div>
+      </div>
+      <div class="tiles" id="tiles"></div>
+      <div class="card"><h2>색별 완등</h2><div class="bars" id="bars"></div></div>
+      <section style="display:flex;flex-direction:column;gap:10px">
+        <h2>전체 순위</h2>
+        <ol class="board" id="staffBoard"></ol>
+      </section>
+      <div class="card">
+        <h2>직접 등록</h2>
+        <div class="sub">폰이 없는 참가자는 여기서 등록하고 기록도 대신 입력할 수 있어요.</div>
+        <form class="add" id="addForm">
+          <input id="addName" placeholder="이름" autocomplete="off" required maxlength="20">
+          <select id="addLevel" aria-label="본인 레벨"></select>
+          <button class="primary" type="submit">추가</button>
+        </form>
+      </div>
+      <details class="all" id="setSec">
+        <summary>설정 · 난이도 색 순서</summary>
+        <div class="settings">
+          <label class="f">쉬운 색부터 어려운 색 순서로, 쉼표로 구분<textarea id="colorsIn" rows="2"></textarea></label>
+          <div class="ladder" id="ladder"></div>
+          <div class="two">
+            <label class="f">2점 구간 시작 색<select id="navyIn"></select></label>
+            <label class="f">제한시간(분)<input id="minIn" type="number" min="5" max="600" step="5" inputmode="numeric"></label>
+          </div>
+          <div><button class="primary" id="saveCfg" type="button">설정 저장</button></div>
+        </div>
+      </details>
+    </div>
+    <div class="card" id="staffGate" hidden>
+      <h2>운영자 전용 화면이에요</h2>
+      <div class="sub" id="gateMsg">운영자 Google 계정으로 로그인해 주세요.</div>
+      <div><button class="primary" id="googleBtn" type="button">Google로 로그인</button></div>
+      <a href="#play">참가자 화면으로 가기</a>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script type="module">
+/* ====== 1) Firebase 설정: 콘솔의 firebaseConfig 값을 그대로 붙여넣기 ====== */
+const firebaseConfig = {
+  apiKey: "AIzaSyAFx2pjD0cmtkLCb4e-GSX7eeeGxbus0Ro",
+  authDomain: "takoyakki-a6067.firebaseapp.com",
+  projectId: "takoyakki-a6067",
+  storageBucket: "takoyakki-a6067.firebasestorage.app",
+  messagingSenderId: "461167133241",
+  appId: "1:461167133241:web:0c16840764cd94190ec3e8"
+};
+/* ====== 2) 운영자 Google 계정 이메일 (firestore.rules 와 같은 값) ====== */
+const ADMIN_EMAIL = "seongyoungmoon@gmail.com";
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInAnonymously, signInWithPopup, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const DEFAULT_CFG={colors:["빨강","주황","노랑","초록","하늘","파랑","남색","보라","흰색","검정"],navy:"남색",minutes:120,startAt:null};
+const SWATCH={"흰색":"#F6F6F3","하양":"#F6F6F3","노랑":"#F5C518","주황":"#F08A24","초록":"#2EA44F","연두":"#8BC34A","파랑":"#2F7DE1","하늘":"#6CB8F0","빨강":"#D7263D","분홍":"#EC6FA6","남색":"#1F2A6B","보라":"#7B3FB5","회색":"#8A8F98","갈색":"#7A4A28","검정":"#121212"};
+const sw=c=>SWATCH[c]||"#9AA3AE";
+
+let cfg={...DEFAULT_CFG}, players=[], me=null, isOwner=false, ready=false, cfgExists=false;
+const open=new Set(), confirmDel=new Set();
+const $=id=>document.getElementById(id);
+const view=()=>location.hash==="#staff"?"staff":"play";
+
+function toast(msg){const t=$("toast");t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,1800);}
+function status(msg,kind){const s=$("status");if(!msg){s.hidden=true;return;}s.textContent=msg;s.dataset.kind=kind||"";s.hidden=false;}
+function el(tag,attrs,...kids){const e=document.createElement(tag);for(const k in attrs||{}){const v=attrs[k];if(v===false||v==null)continue;if(k==="class")e.className=v;else if(k.startsWith("on"))e.addEventListener(k.slice(2),v);else e.setAttribute(k,v===true?"":v);}for(const c of kids.flat()){if(c==null||c===false)continue;e.append(c.nodeType?c:document.createTextNode(c));}return e;}
+const dot=c=>{const d=el("span",{class:"dot"});d.style.background=sw(c);return d;};
+const stoneEl=(color,bonus,big)=>{const s=el("span",{class:"stone"+(big?" big":"")},bonus?"★":"");s.style.background=sw(color);return s;};
+
+/* ---------- scoring ----------
+   남색 미만: 자기 색 1점 · 하나 위 2점 · 두 개 위 3점
+   남색 이상: 자기 색 2점 · 하나 위 3점
+   보너스 문제(하나 위 색, 1번만): 5점 */
+function rulesFor(level){
+  const c=cfg.colors,i=c.indexOf(level),n=c.indexOf(cfg.navy);
+  const high=i>=0&&n>=0&&i>=n;
+  const opts=i<0?[]:(high
+    ?[{color:c[i],tag:"자기 색",pts:2},{color:c[i+1],tag:"하나 위",pts:3}]
+    :[{color:c[i],tag:"자기 색",pts:1},{color:c[i+1],tag:"하나 위",pts:2},{color:c[i+2],tag:"두 개 위",pts:3}]);
+  return {i,high,opts,bonus:i>=0?(c[i+1]||null):null};
+}
+function ptsOf(s,level){
+  if(s.kind==="bonus")return 5;
+  const o=rulesFor(level).opts.find(o=>o.color&&o.color===s.color);
+  return o?o.pts:0;
+}
+function scoreOf(p){
+  const r=rulesFor(p.level),list=(Array.isArray(p.solves)?p.solves:[]).slice().sort((a,b)=>a.at-b.at);
+  let total=0;for(const s of list)total+=ptsOf(s,p.level);
+  return {r,list,total,count:list.length};
+}
+function ranked(){
+  const rows=players.map(p=>({p,...scoreOf(p)})).sort((a,b)=>b.total-a.total||b.count-a.count||String(a.p.name).localeCompare(String(b.p.name),"ko"));
+  let rank=0,prev=null;
+  rows.forEach((x,i)=>{if(!prev||prev.total!==x.total||prev.count!==x.count)rank=i+1;x.rank=rank;prev=x;});
+  return rows;
+}
+const startMs=()=>cfg.startAt&&typeof cfg.startAt.toMillis==="function"?cfg.startAt.toMillis():(typeof cfg.startAt==="number"?cfg.startAt:null);
+function timerState(){
+  const st=startMs(),total=(cfg.minutes||120)*60000;
+  if(!st)return {state:"before",left:total};
+  const left=total-(Date.now()-st);
+  return left<=0?{state:"over",left:0}:{state:"running",left};
+}
+
+/* ---------- Firebase ---------- */
+const configured=!Object.values(firebaseConfig).some(v=>v==="PASTE_HERE");
+let auth=null,fs=null;
+if(configured){const app=initializeApp(firebaseConfig);auth=getAuth(app);fs=getFirestore(app);}
+
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const pref=id=>doc(fs,"players",id);
+const addSolve=(pid,kind,color)=>updateDoc(pref(pid),{solves:arrayUnion({kind,color,at:Date.now()})});
+function undoSolve(pid,kind,color){
+  const p=players.find(x=>x.id===pid);if(!p)return Promise.resolve();
+  let pick=null;for(const s of p.solves||[])if(s.kind===kind&&(kind==="bonus"||s.color===color)&&(!pick||s.at>pick.at))pick=s;
+  return pick?updateDoc(pref(pid),{solves:arrayRemove(pick)}):Promise.resolve();
+}
+const createPlayer=(id,name,level)=>setDoc(pref(id),{name,level,solves:[],createdAt:Date.now()});
+const setLevel=(pid,level)=>updateDoc(pref(pid),{level});
+const deletePlayer=pid=>deleteDoc(pref(pid));
+function saveCfg(next){
+  const merged={colors:cfg.colors,navy:cfg.navy,minutes:Math.round(cfg.minutes||120),startAt:cfg.startAt||null,...next};
+  return setDoc(doc(fs,"config","main"),merged);
+}
+async function guard(fn,okMsg){
+  try{await fn();if(okMsg)toast(okMsg);}
+  catch(e){
+    console.error(e);
+    if(e&&e.code==="permission-denied"){
+      const ts=timerState();
+      status(ts.state!=="running"&&view()==="play"?"지금은 입력 시간이 아니에요.":"권한이 없어요. 운영자에게 알려 주세요.","warn");
+    }else if(e&&e.code==="not-found")status("기록을 찾을 수 없어요. 운영진에게 다시 등록해 달라고 해 주세요.","warn");
+    else status("저장하지 못했어요. 인터넷 연결을 확인하고 다시 눌러 주세요.","warn");
+  }
+}
+
+/* ---------- shared pieces ---------- */
+function renderRules(){
+  const n=cfg.navy;
+  $("rulesLine").replaceChildren(el("span",{},`${n} 미만: 자기 색 1 · 하나 위 2 · 두 개 위 3점`),el("span",{},`${n} 이상: 자기 색 2 · 하나 위 3점`),el("span",{},"보너스 문제 5점 (1번)"));
+}
+function actionLines(p,r,list,editable){
+  const cnt=(kind,color)=>list.filter(s=>s.kind===kind&&(kind==="bonus"||s.color===color)).length;
+  const line=(kind,color,tag,pts,max)=>{
+    const off=!color,count=off?0:cnt(kind,color);
+    const big=el("button",{type:"button",class:"stonebtn",disabled:!editable||off||(max!=null&&count>=max),
+      "aria-label":`${color||""} ${tag} 완등 추가`,
+      onclick:()=>guard(()=>addSolve(p.id,kind,color),`${color} +${pts}점`)},
+      color?stoneEl(color,kind==="bonus",true):el("span",{class:"stone big"}),
+      el("span",{class:"sb-txt"},el("b",{},off?"해당 없음":color+(kind==="bonus"?" 보너스":"")),el("small",{},`${tag} · ${pts}점`+(max?" · 1번만":""))));
+    return el("div",{class:"act"+(off?" off":"")},big,el("span",{class:"cnt"},`×${count}`),
+      el("button",{type:"button","aria-label":`${color||""} ${tag} 하나 취소`,disabled:!editable||off||count===0,
+        onclick:()=>guard(()=>undoSolve(p.id,kind,color),"취소했어요")},"−"));
+  };
+  return [...r.opts.map(o=>line("stone",o.color,o.tag,o.pts,null)),line("bonus",r.bonus,"보너스 문제",5,1)];
+}
+function boardRows(target,{staff}){
+  const rows=ranked();
+  if(!rows.length){target.replaceChildren(el("li",{class:"empty"},staff?"아직 참가자가 없어요. 참가자 링크를 공유하면 각자 등록해요.":"아직 참가자가 없어요."));return;}
+  target.replaceChildren(...rows.map(x=>{
+    const {p,r}=x,isOpen=staff&&open.has(p.id);
+    const li=el("li",{class:"row"+(p.id===me?" mine":""),"data-top":x.rank<=3&&x.total>0?String(x.rank):false});
+    const inner=[el("span",{class:"rank"},String(x.rank)),
+      el("span",{class:"who"},el("div",{class:"name"},p.name+(p.id===me&&!staff?" (나)":"")),
+        el("div",{class:"meta"},el("span",{class:"chip"},dot(p.level),p.level+(r.i<0?" (색 목록에 없음)":"")),el("span",{},`완등 ${x.count}`)),
+        x.list.length?el("div",{class:"stack"},...x.list.map(s=>stoneEl(s.color,s.kind==="bonus"))):null),
+      el("span",{class:"pts"},String(x.total),el("small",{},"점"))];
+    li.append(staff?el("button",{class:"row-head",type:"button","aria-expanded":String(isOpen),
+      onclick:()=>{isOpen?open.delete(p.id):open.add(p.id);confirmDel.delete(p.id);render();}},...inner):el("div",{class:"row-head"},...inner));
+    if(isOpen){
+      const sure=confirmDel.has(p.id);
+      const lv=el("select",{"aria-label":"레벨 변경",onchange:e=>guard(()=>setLevel(p.id,e.target.value),"레벨을 바꿨어요")},
+        ...cfg.colors.map(c=>el("option",{value:c,selected:c===p.level},c)));
+      li.append(el("div",{class:"panel"},...actionLines(p,r,x.list,true),
+        el("div",{class:"panel-foot"},el("label",{class:"chip"},"레벨",lv),
+          el("span",{class:"chip"},
+            sure?el("button",{type:"button",class:"ghost",onclick:()=>{confirmDel.delete(p.id);render();}},"취소"):null,
+            el("button",{type:"button",class:"ghost danger",onclick:()=>{
+              if(!sure){confirmDel.add(p.id);render();return;}
+              open.delete(p.id);confirmDel.delete(p.id);guard(()=>deletePlayer(p.id),"삭제했어요");}},sure?"정말 삭제":"참가자 삭제")))));
+    }
+    return li;
+  }));
+}
+function fillColorSelect(sel){
+  const keep=sel.value;
+  sel.replaceChildren(...cfg.colors.map(c=>el("option",{value:c},c)));
+  if(cfg.colors.includes(keep))sel.value=keep;
+}
+
+/* ---------- participant view ---------- */
+let allOpen=false;
+function renderPlay(){
+  fillColorSelect($("regLevel"));
+  if(!ready||!me){$("regCard").hidden=true;$("meCard").hidden=true;return;}
+  const mine=players.find(p=>p.id===me);
+  if(!mine){$("regCard").hidden=false;$("meCard").hidden=true;return;}
+  $("regCard").hidden=true;$("meCard").hidden=false;
+  const rows=ranked(),x=rows.find(r=>r.p.id===me),ts=timerState();
+  const notice=ts.state==="before"?"아직 시작 전이에요. 운영진이 시작하면 입력할 수 있어요.":ts.state==="over"?"시간이 끝났어요. 입력이 마감됐어요.":"완등한 스톤 색을 누르세요. 잘못 눌렀으면 − 로 취소해요.";
+  const det=el("details",{class:"all",ontoggle:e=>{allOpen=e.target.open;}},el("summary",{},`전체 순위 (${rows.length}명)`));
+  if(allOpen)det.open=true;
+  const ol=el("ol",{class:"board"});boardRows(ol,{staff:false});det.append(ol);
+  $("meCard").replaceChildren(
+    el("div",{class:"me-top"},
+      el("div",{},el("div",{class:"me-name"},mine.name),el("div",{class:"meta"},el("span",{class:"chip"},dot(mine.level),"레벨 "+mine.level))),
+      el("div",{class:"me-score"},el("div",{class:"n"},String(x.total)),el("div",{class:"r"},`점 · ${x.rank}위 / ${rows.length}명`))),
+    x.list.length?el("div",{class:"stack"},...x.list.map(s=>stoneEl(s.color,s.kind==="bonus"))):null,
+    el("div",{class:"note","data-kind":ts.state==="over"?"warn":false},notice),
+    el("div",{class:"pick"},...actionLines(mine,x.r,x.list,ts.state==="running")),
+    det);
+}
+
+/* ---------- staff view ---------- */
+function renderStaff(){
+  $("staffGate").hidden=isOwner;$("staffBody").hidden=!isOwner;
+  if(!isOwner)return;
+  const ts=timerState();
+  $("startBtn").textContent=ts.state==="before"?"시작":"진행 중";
+  $("startBtn").disabled=ts.state!=="before";
+  $("endBtn").disabled=ts.state!=="running";
+  $("timerNote").textContent=`제한시간 ${cfg.minutes||120}분 · `+(ts.state==="before"?"시작을 누르면 모든 참가자 화면에 동시에 반영돼요.":ts.state==="over"?"종료됐어요. +5분으로 연장할 수 있어요.":"진행 중이에요. ±5분은 바로 모든 화면에 반영돼요.")+(cfgExists?"":" · 먼저 아래 설정을 한 번 저장해 주세요.");
+  const rows=ranked(),all=rows.flatMap(x=>x.list);
+  const avg=rows.length?(rows.reduce((a,x)=>a+x.total,0)/rows.length):0;
+  const tile=(k,v)=>el("div",{class:"tile"},el("div",{class:"k"},k),el("div",{class:"v"},v));
+  $("tiles").replaceChildren(tile("참가자",String(rows.length)),tile("총 완등",String(all.length)),
+    tile("보너스 성공",String(all.filter(s=>s.kind==="bonus").length)),tile("평균 점수",avg.toFixed(1)));
+  const byColor=cfg.colors.map(c=>({c,n:all.filter(s=>s.color===c).length}));
+  const max=Math.max(1,...byColor.map(b=>b.n));
+  $("bars").replaceChildren(...byColor.map(b=>{const f=el("div",{class:"fl"});f.style.width=(b.n/max*100)+"%";f.style.background=sw(b.c);
+    return el("div",{class:"bar"},el("span",{class:"chip"},dot(b.c),b.c),el("div",{class:"tr"},f),el("span",{class:"c"},String(b.n)));}));
+  boardRows($("staffBoard"),{staff:true});
+  fillColorSelect($("addLevel"));
+  const ci=$("colorsIn");if(document.activeElement!==ci)ci.value=cfg.colors.join(", ");
+  const nv=$("navyIn");if(document.activeElement!==nv){fillColorSelect(nv);nv.value=cfg.navy;}
+  const mi=$("minIn");if(document.activeElement!==mi)mi.value=cfg.minutes||120;
+  const n=cfg.colors.indexOf(cfg.navy);
+  $("ladder").replaceChildren(...cfg.colors.map((c,i)=>el("span",{class:i>=n&&n>=0?"hi":""},dot(c),c)));
+}
+
+function tick(){
+  const ts=timerState(),t=$("time");
+  t.dataset.state=ts.state;
+  if(ts.state==="over")t.textContent="종료";
+  else{const s=Math.ceil(ts.left/1000);t.textContent=`${Math.floor(s/3600)}:${String(Math.floor(s%3600/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;}
+  if(ts.state!==tick.last){tick.last=ts.state;if(tick.booted)render();}
+}
+function render(){
+  const v=view();
+  $("viewPlay").hidden=v!=="play";$("viewStaff").hidden=v!=="staff";
+  $("nav").hidden=!isOwner;
+  $("navPlay").setAttribute("aria-current",v==="play"?"page":"false");
+  $("navStaff").setAttribute("aria-current",v==="staff"?"page":"false");
+  renderRules();
+  if(v==="play")renderPlay();else renderStaff();
+  tick();
+}
+
+/* ---------- events ---------- */
+window.addEventListener("hashchange",()=>{status("");render();});
+$("regForm").addEventListener("submit",e=>{
+  e.preventDefault();
+  const name=$("regName").value.trim(),level=$("regLevel").value;
+  if(!name||!me)return;
+  if(players.some(p=>p.name===name)){status(`‘${name}’ 이름이 이미 있어요. 이름 뒤에 숫자를 붙여 주세요.`,"warn");return;}
+  status("");guard(()=>createPlayer(me,name,level),"등록했어요");
+});
+$("addForm").addEventListener("submit",e=>{
+  e.preventDefault();
+  const name=$("addName").value.trim(),level=$("addLevel").value;
+  if(!name)return;
+  if(players.some(p=>p.name===name)){status(`‘${name}’ 이름이 이미 있어요.`,"warn");return;}
+  status("");guard(()=>createPlayer("m-"+uid(),name,level),`${name} 추가`);
+  $("addName").value="";$("addName").focus();
+});
+$("colorsIn").addEventListener("input",()=>{
+  const cols=$("colorsIn").value.split(/[,，\n]/).map(s=>s.trim()).filter(Boolean),nv=$("navyIn"),cur=nv.value;
+  nv.replaceChildren(...cols.map(c=>el("option",{value:c},c)));if(cols.includes(cur))nv.value=cur;
+});
+$("saveCfg").addEventListener("click",()=>{
+  const cols=[...new Set($("colorsIn").value.split(/[,，\n]/).map(s=>s.trim()).filter(Boolean))];
+  if(cols.length<2){status("색을 두 개 이상 넣어 주세요.","warn");return;}
+  const mins=Math.max(5,Math.min(600,parseInt($("minIn").value,10)||120));
+  status("");guard(()=>saveCfg({colors:cols,navy:cols.includes($("navyIn").value)?$("navyIn").value:cols[cols.length-1],minutes:mins}),"설정을 저장했어요");
+});
+$("startBtn").addEventListener("click",()=>guard(()=>saveCfg({startAt:serverTimestamp()}),"시작!"));
+$("minusBtn").addEventListener("click",()=>{const m=Math.max(5,(cfg.minutes||120)-5);guard(()=>saveCfg({minutes:m}),`제한시간 ${m}분`);});
+$("plusBtn").addEventListener("click",()=>{const m=Math.min(600,(cfg.minutes||120)+5);guard(()=>saveCfg({minutes:m}),`제한시간 ${m}분`);});
+let endArmed=false;
+$("endBtn").addEventListener("click",()=>{
+  if(!endArmed){endArmed=true;$("endBtn").textContent="정말 종료";setTimeout(()=>{endArmed=false;$("endBtn").textContent="지금 종료";},3000);return;}
+  endArmed=false;$("endBtn").textContent="지금 종료";
+  const st=startMs();if(!st)return;
+  const m=Math.max(0,Math.floor((Date.now()-st)/60000));
+  guard(()=>saveCfg({minutes:m}),"종료했어요");
+});
+let resetArmed=false;
+$("resetBtn").addEventListener("click",()=>{
+  if(!resetArmed){resetArmed=true;$("resetBtn").textContent="점수 전부 삭제됨 · 정말 초기화";setTimeout(()=>{resetArmed=false;$("resetBtn").textContent="초기화";},3000);return;}
+  resetArmed=false;$("resetBtn").textContent="초기화";guard(async()=>{
+    const b=writeBatch(fs);
+    for(const p of players)b.update(pref(p.id),{solves:[]});
+    b.set(doc(fs,"config","main"),{colors:cfg.colors,navy:cfg.navy,minutes:Math.round(cfg.minutes||120),startAt:null});
+    await b.commit();
+  },"타이머와 모든 점수를 초기화했어요");
+});
+$("googleBtn").addEventListener("click",async()=>{
+  try{await signInWithPopup(auth,new GoogleAuthProvider());}
+  catch(e){console.error(e);$("gateMsg").textContent="로그인하지 못했어요. 팝업 차단을 끄고 다시 눌러 주세요.";}
+});
+setInterval(tick,1000);
+
+/* ---------- boot ---------- */
+render();tick.booted=true;
+if(!configured){
+  status("Firebase 설정값이 아직 들어가지 않았어요. index.html 맨 아래의 firebaseConfig 를 채워 주세요.","warn");
+}else{
+  onAuthStateChanged(auth,u=>{
+    if(!u){signInAnonymously(auth).catch(()=>status("접속하지 못했어요. 인터넷 연결을 확인해 주세요.","warn"));return;}
+    me=u.uid;
+    isOwner=!!(u.email&&u.email.toLowerCase()===ADMIN_EMAIL.toLowerCase());
+    if(view()==="staff"&&u.email&&!isOwner)$("gateMsg").textContent=`${u.email} 계정은 운영자가 아니에요.`;
+    render();
+  });
+  let got=0;
+  const timer=setTimeout(()=>{if(got<2)status("기록을 불러오는 중이에요. 연결이 느리면 잠시 기다려 주세요.");},10000);
+  const arrived=()=>{if(++got===2){clearTimeout(timer);if(($("status").textContent||"").startsWith("기록을 불러오는"))status("");}};
+  const fail=e=>{console.error(e);clearTimeout(timer);status("기록을 불러오지 못했어요. 페이지를 새로고침해 주세요.","warn");};
+  let pFirst=true,cFirst=true;
+  onSnapshot(collection(fs,"players"),s=>{players=s.docs.map(d=>({id:d.id,...d.data()}));ready=true;if(pFirst){pFirst=false;arrived();}render();},fail);
+  onSnapshot(doc(fs,"config","main"),s=>{cfgExists=s.exists();cfg=s.exists()?{...DEFAULT_CFG,...s.data()}:{...DEFAULT_CFG};if(cFirst){cFirst=false;arrived();}render();},fail);
+}
+</script>
+</body>
+</html>
